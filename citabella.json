@@ -1,5 +1,5 @@
 {
-  "name": "Agendamiento Citas Belleza por WhatsApp",
+  "name": "Agendamiento Citas Belleza por WhatsApp (CONFIGURADO)",
   "nodes": [
     {
       "parameters": {
@@ -168,7 +168,7 @@
     },
     {
       "parameters": {
-        "url": "https://graph.facebook.com/v17.0/{{$env.WHATSAPP_PHONE_ID}}/messages",
+        "url": "https://graph.facebook.com/v17.0/1085311477990545/messages",
         "method": "POST",
         "authentication": "genericCredentialType",
         "genericAuthType": "httpHeaderAuth",
@@ -177,13 +177,13 @@
           "parameters": [
             {
               "name": "Authorization",
-              "value": "Bearer {{$env.WHATSAPP_TOKEN}}"
+              "value": "Bearer EAAUHDYl9YMcBQ0z43hZC1KIHxAWHE5X4g0wIPjJOUI2JpdrK31Kb9L2TZArBE7OZCy9Ibnu3eheziZBIi3Xb7FoXNi1u2qX2ZBipSMSldqqAGQQZA8pFlZCzBdIYyvVZBp2cZBj9UZBBjxcLZCcb6cwZCAMcpv7ZCDTYQ7LZBNzQUlaBpdkkJjrAhwaZBLG2uMEieX5ExWnIAZDZD"
             }
           ]
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "{\n  \"messaging_product\": \"whatsapp\",\n  \"to\": \"{{$node['Extraer datos del mensaje'].json.remitente}}\",\n  \"type\": \"text\",\n  \"text\": { \"body\": \"{{$node['Lógica de conversación'].json.respuesta}}\" }\n}",
+        "jsonBody": "{\n  \"messaging_product\": \"whatsapp\",\n  \"to\": \"{{$node['Extraer datos del mensaje'].json.remitente}}\",\n  \"type\": \"text\",\n  \"text\": {\n    \"body\": \"{{$node['Lógica de conversación'].json.respuesta}}\"\n  }\n}",
         "options": {
           "timeout": 20000
         }
