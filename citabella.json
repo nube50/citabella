@@ -1,5 +1,5 @@
 {
-  "name": "Agendamiento Citas Belleza por WhatsApp (CONFIGURADO)",
+  "name": "Agendamiento Citas Belleza por WhatsApp (CORREGIDO)",
   "nodes": [
     {
       "parameters": {
@@ -294,6 +294,6 @@
   },
   "staticData": null,
   "pinData": {},
-  "versionId": "1.0.0",
+  "versionId": "1.0.1",
   "triggerCount": 1
 }
