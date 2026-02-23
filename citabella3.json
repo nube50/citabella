@@ -1,0 +1,170 @@
+{
+  "name": "🌸 Citabella - Agendamiento WhatsApp (CORREGIDO)",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "citabella-webhook",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "node-001",
+      "name": "📲 Webhook Evolution API",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [200, 400]
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "OK",
+        "options": { "responseCode": 200 }
+      },
+      "id": "node-002",
+      "name": "✅ Responder OK",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [440, 240]
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $input.first().json;\n\nconst event = body?.event;\nconst data = body?.data;\n\nif (event !== 'messages.upsert') {\n  return [{ json: { skip: true } }];\n}\n\nconst message = data?.messages?.[0] || data?.message;\nif (!message) {\n  return [{ json: { skip: true } }];\n}\n\nif (message?.key?.fromMe === true) {\n  return [{ json: { skip: true } }];\n}\n\nconst from = message?.key?.remoteJid?.replace('@s.whatsapp.net', '') || \n             data?.key?.remoteJid?.replace('@s.whatsapp.net', '');\n\nif (!from) {\n  return [{ json: { skip: true } }];\n}\n\nconst messageText = message?.message?.conversation || \n                    message?.message?.extendedTextMessage?.text ||\n                    data?.message?.conversation ||\n                    data?.message?.extendedTextMessage?.text ||\n                    '[Mensaje no compatible, por favor escribe en texto]';\n\nconst contactName = data?.pushName || message?.pushName || 'Cliente';\n\nreturn [{\n  json: {\n    skip: false,\n    from: from,\n    messageText: messageText,\n    contactName: contactName,\n    timestamp: Date.now()\n  }\n}];"
+      },
+      "id": "node-003",
+      "name": "🔍 Extraer Mensaje",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [440, 400]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "cond-skip",
+              "leftValue": "={{ $json.skip }}",
+              "rightValue": true,
+              "operator": { "type": "boolean", "operation": "equal" }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "node-004",
+      "name": "¿Ignorar?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [680, 400]
+    },
+    {
+      "parameters": {
+        "jsCode": "const messageData = $('🔍 Extraer Mensaje').first().json;\nconst telefono = messageData.from;\n\nconst workflowStaticData = $getWorkflowStaticData('global');\n\nif (!workflowStaticData.conversaciones) {\n  workflowStaticData.conversaciones = {};\n}\n\nconst ahora = Date.now();\nfor (const tel in workflowStaticData.conversaciones) {\n  if (ahora - workflowStaticData.conversaciones[tel].ultimaActividad > 7200000) {\n    delete workflowStaticData.conversaciones[tel];\n  }\n}\n\nif (!workflowStaticData.conversaciones[telefono]) {\n  workflowStaticData.conversaciones[telefono] = {\n    historial: [],\n    ultimaActividad: ahora\n  };\n}\n\nconst conv = workflowStaticData.conversaciones[telefono];\nconv.ultimaActividad = ahora;\n\nconv.historial.push({\n  role: 'user',\n  prompt: messageData.messageText\n});\n\nif (conv.historial.length > 20) {\n  conv.historial = conv.historial.slice(-20);\n}\n\nconst contents = conv.historial.map(msg => ({\n  role: msg.role === 'user' ? 'user' : 'model',\n  parts: [{ text: msg.prompt }]\n}));\n\nif (contents.length === 0) {\n  contents.push({\n    role: 'user',\n    parts: [{ text: messageData.messageText }]\n  });\n}\n\nconst systemInstructionText = `Eres Sofia, la asistente virtual del Salón Citabella - Salón, Peluquería y Spa. Eres amable, profesional y hablas en español colombiano natural.\n\nSERVICIOS Y PRECIOS:\n1. Corte de cabello - $15.000 - 30 min\n2. Tinte / Coloración - $45.000 - 90 min\n3. Manicure - $20.000 - 45 min\n4. Pedicure - $25.000 - 50 min\n5. Manicure + Pedicure - $40.000 - 80 min\n6. Tratamiento capilar hidratación - $35.000 - 60 min\n7. Tratamiento capilar keratina - $80.000 - 120 min\n\nHORARIOS:\n- Lunes a Viernes: 8:00 AM - 7:00 PM\n- Sábados: 8:00 AM - 5:00 PM\n- Domingos: CERRADO\n\nPARA AGENDAR necesitas recopilar uno a uno: nombre completo, servicio deseado, fecha y hora.\n\nCUANDO TENGAS TODOS LOS DATOS coloca este bloque exacto al final de tu mensaje:\n[CITA_DATOS]{\"nombre\": \"nombre\", \"servicio\": \"servicio\", \"fecha\": \"DD/MM/YYYY\", \"hora\": \"HH:MM\", \"precio\": \"precio\", \"duracion\": \"minutos\"}[/CITA_DATOS]\n\nREGLAS:\n- Respuestas cortas máximo 3 oraciones\n- Usa emojis con moderación 💅\n- Verifica que la fecha no sea domingo\n- Verifica que la hora esté dentro del horario\n- Para cancelar: pide nombre y fecha\n- Para ver citas: pide nombre`;\n\nconst geminiBody = {\n  system_instruction: {\n    parts: [{ text: systemInstructionText }]\n  },\n  contents: contents,\n  generationConfig: {\n    temperature: 0.7,\n    maxOutputTokens: 500\n  }\n};\n\nreturn [{\n  json: {\n    ...messageData,\n    historial: conv.historial,\n    geminiBody: geminiBody\n  }\n}];"
+      },
+      "id": "node-005",
+      "name": "🧠 Memoria Conversación + Construir Body",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [920, 400]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=[TU_NUEVA_API_KEY]",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json.geminiBody }}",
+        "options": {}
+      },
+      "id": "node-006",
+      "name": "🤖 Google Gemini (HTTP)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1160, 400]
+    },
+    {
+      "parameters": {
+        "jsCode": "const geminiResponse = $input.first().json;\nconst messageData = $('🧠 Memoria Conversación + Construir Body').first().json;\n\nconst respuestaTexto = geminiResponse?.candidates?.[0]?.content?.parts?.[0]?.text || \n                       geminiResponse?.text || \n                       'Lo siento, tuve un problema. Por favor intenta de nuevo.';\n\nlet citaDatos = null;\nconst citaMatch = respuestaTexto.match(/\\[CITA_DATOS\\](.*?)\\[\\/CITA_DATOS\\]/s);\nif (citaMatch) {\n  try {\n    citaDatos = JSON.parse(citaMatch[1]);\n    citaDatos.telefono = messageData.from;\n    citaDatos.fechaCreacion = new Date().toISOString();\n    citaDatos.id = 'CITA_' + Date.now();\n    citaDatos.estado = 'Confirmada';\n  } catch(e) {\n    citaDatos = null;\n  }\n}\n\nconst mensajeLimpio = respuestaTexto.replace(/\\[CITA_DATOS\\].*?\\[\\/CITA_DATOS\\]/s, '').trim();\n\nconst workflowStaticData = $getWorkflowStaticData('global');\nif (workflowStaticData.conversaciones?.[messageData.from]) {\n  workflowStaticData.conversaciones[messageData.from].historial.push({\n    role: 'assistant',\n    prompt: respuestaTexto\n  });\n  workflowStaticData.conversaciones[messageData.from].ultimaActividad = Date.now();\n}\n\nif (citaDatos) {\n  if (!workflowStaticData.citas) workflowStaticData.citas = [];\n  workflowStaticData.citas.push(citaDatos);\n}\n\nreturn [{\n  json: {\n    ...messageData,\n    respuestaTexto: mensajeLimpio,\n    citaDatos: citaDatos,\n    citaGuardada: citaDatos !== null\n  }\n}];"
+      },
+      "id": "node-007",
+      "name": "⚙️ Procesar Respuesta",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1400, 400]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://n8n.culturavpn.pro:7676/message/sendText/citabella",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "citabellaapi" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"number\": \"{{ $json.from }}\",\n  \"text\": \"{{ $json.respuestaTexto }}\"\n}",
+        "options": {}
+      },
+      "id": "node-008",
+      "name": "📤 Enviar WhatsApp",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1640, 400]
+    }
+  ],
+  "connections": {
+    "📲 Webhook Evolution API": {
+      "main": [
+        [
+          { "node": "✅ Responder OK", "type": "main", "index": 0 },
+          { "node": "🔍 Extraer Mensaje", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "🔍 Extraer Mensaje": {
+      "main": [
+        [{ "node": "¿Ignorar?", "type": "main", "index": 0 }]
+      ]
+    },
+    "¿Ignorar?": {
+      "main": [
+        [],
+        [{ "node": "🧠 Memoria Conversación + Construir Body", "type": "main", "index": 0 }]
+      ]
+    },
+    "🧠 Memoria Conversación + Construir Body": {
+      "main": [
+        [{ "node": "🤖 Google Gemini (HTTP)", "type": "main", "index": 0 }]
+      ]
+    },
+    "🤖 Google Gemini (HTTP)": {
+      "main": [
+        [{ "node": "⚙️ Procesar Respuesta", "type": "main", "index": 0 }]
+      ]
+    },
+    "⚙️ Procesar Respuesta": {
+      "main": [
+        [{ "node": "📤 Enviar WhatsApp", "type": "main", "index": 0 }]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true
+  },
+  "pinData": {}
+}
