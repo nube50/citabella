@@ -1,299 +1,170 @@
 {
-  "name": "Agendamiento Citas Belleza por WhatsApp (CORREGIDO)",
+  "name": "🌸 Citabella - Agendamiento WhatsApp",
   "nodes": [
     {
       "parameters": {
-        "path": "whatsapp-webhook",
-        "responseMode": "onReceived",
-        "responseData": "={{ $json?.hub_challenge || 'ok' }}",
-        "options": {
-          "responseHeaders": {
-            "entries": [
-              {
-                "name": "Content-Type",
-                "value": "text/plain"
-              }
-            ]
-          }
-        }
+        "httpMethod": "POST",
+        "path": "citabella-webhook",
+        "responseMode": "responseNode",
+        "options": {}
       },
-      "id": "webhook",
-      "name": "Webhook WhatsApp",
+      "id": "node-001",
+      "name": "📲 Webhook Evolution API",
       "type": "n8n-nodes-base.webhook",
-      "typeVersion": 1,
-      "position": [250, 300]
-    },
-    {
-      "parameters": {
-        "sql": "CREATE TABLE IF NOT EXISTS conversaciones (remitente TEXT PRIMARY KEY, estado TEXT, datos TEXT, ultimo_mensaje TEXT, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP); CREATE TABLE IF NOT EXISTS citas (id INTEGER PRIMARY KEY AUTOINCREMENT, remitente TEXT, servicio TEXT, fecha TEXT, hora TEXT, creado DATETIME DEFAULT CURRENT_TIMESTAMP);",
-        "queryParameters": {}
-      },
-      "id": "initdb",
-      "name": "Inicializar BD",
-      "type": "n8n-nodes-base.executeQuery",
-      "typeVersion": 1,
-      "position": [450, 500]
-    },
-    {
-      "parameters": {
-        "sql": "SELECT * FROM conversaciones WHERE remitente = $remitente;",
-        "queryParameters": {
-          "values": [
-            {
-              "parameter": "remitente",
-              "value": "={{ $json.entry[0].changes[0].value.messages[0].from }}"
-            }
-          ]
-        }
-      },
-      "id": "consultarConversacion",
-      "name": "Consultar conversación",
-      "type": "n8n-nodes-base.executeQuery",
-      "typeVersion": 1,
-      "position": [650, 300]
-    },
-    {
-      "parameters": {
-        "keepOnlySet": true,
-        "values": {
-          "string": [
-            {
-              "name": "remitente",
-              "value": "={{ $json.entry[0].changes[0].value.messages[0].from }}"
-            },
-            {
-              "name": "mensaje",
-              "value": "={{ $json.entry[0].changes[0].value.messages[0].text.body || $json.entry[0].changes[0].value.messages[0].interactive?.button_reply?.title }}"
-            },
-            {
-              "name": "tipo",
-              "value": "={{ $json.entry[0].changes[0].value.messages[0].type }}"
-            }
-          ]
-        }
-      },
-      "id": "prepararDatos",
-      "name": "Extraer datos del mensaje",
-      "type": "n8n-nodes-base.set",
       "typeVersion": 2,
-      "position": [450, 300]
+      "position": [200, 400]
     },
     {
       "parameters": {
-        "jsCode": "// Obtener datos de entrada\nconst remitente = $input.first().json.remitente;\nconst mensaje = $input.first().json.mensaje || '';\nconst tipo = $input.first().json.tipo;\n\n// Verificar si es un mensaje de texto o botón\nconst texto = mensaje.trim();\n\n// Buscar conversación previa\nconst conversacion = $input.all()[1]?.json || null; // viene del nodo de consulta\n\n// Definir servicios disponibles\nconst servicios = {\n  '1': 'Corte de cabello',\n  '2': 'Tinte',\n  '3': 'Manicure',\n  '4': 'Masaje'\n};\n\nlet estado = 'esperando_servicio';\nlet datosCliente = {};\nlet respuesta = '';\n\nif (conversacion) {\n  estado = conversacion.estado || 'esperando_servicio';\n  datosCliente = JSON.parse(conversacion.datos || '{}');\n}\n\n// Lógica de máquina de estados\nif (estado === 'esperando_servicio') {\n  if (servicios[texto]) {\n    datosCliente.servicio = servicios[texto];\n    estado = 'esperando_fecha';\n    respuesta = `Has elegido *${servicios[texto]}*.\\n\\nPor favor, indicame la fecha deseada (formato DD/MM/AAAA).`;\n  } else {\n    respuesta = `Bienvenido al *Sistema de Citas Beauty*.\\n\\nElige un servicio escribiendo el número correspondiente:\\n1 - Corte de cabello\\n2 - Tinte\\n3 - Manicure\\n4 - Masaje`;\n  }\n} else if (estado === 'esperando_fecha') {\n  // Validar formato de fecha simple (DD/MM/AAAA)\n  const fechaRegex = /^(0[1-9]|[12][0-9]|3[01])\\/(0[1-9]|1[012])\\/(20\\d{2})$/;\n  if (fechaRegex.test(texto)) {\n    datosCliente.fecha = texto;\n    estado = 'esperando_hora';\n    respuesta = `Fecha registrada: *${texto}*.\\n\\nAhora, indicame la hora (formato HH:MM, por ejemplo 15:30).`;\n  } else {\n    respuesta = `Formato de fecha incorrecto. Usa DD/MM/AAAA (ejemplo: 25/12/2025).`;\n  }\n} else if (estado === 'esperando_hora') {\n  const horaRegex = /^([01]\\d|2[0-3]):([0-5]\\d)$/;\n  if (horaRegex.test(texto)) {\n    datosCliente.hora = texto;\n    estado = 'confirmar';\n    respuesta = `Hora registrada: *${texto}*.\\n\\n*Resumen de tu cita:*\\nServicio: ${datosCliente.servicio}\\nFecha: ${datosCliente.fecha}\\nHora: ${texto}\\n\\n¿Confirmas? Responde *SI* para agendar, o *NO* para cancelar.`;\n  } else {\n    respuesta = `Formato de hora incorrecto. Usa HH:MM (ejemplo: 09:30).`;\n  }\n} else if (estado === 'confirmar') {\n  if (texto.toUpperCase() === 'SI') {\n    estado = 'finalizado';\n    // Aquí guardaremos la cita en el siguiente nodo\n    respuesta = `¡Cita confirmada! Te esperamos el ${datosCliente.fecha} a las ${datosCliente.hora}.`;\n  } else {\n    // Reiniciar\n    estado = 'esperando_servicio';\n    datosCliente = {};\n    respuesta = `Cita cancelada. Si deseas agendar una nueva, elige un servicio:\\n1 - Corte\\n2 - Tinte\\n3 - Manicure\\n4 - Masaje`;\n  }\n} else {\n  // Por si acaso, reiniciamos\n  estado = 'esperando_servicio';\n  datosCliente = {};\n  respuesta = `Bienvenido. Elige un servicio:\\n1 - Corte\\n2 - Tinte\\n3 - Manicure\\n4 - Masaje`;\n}\n\n// Devolver resultados\nreturn [{\n  remitente: remitente,\n  estado: estado,\n  datosCliente: JSON.stringify(datosCliente),\n  respuesta: respuesta,\n  guardarCita: (estado === 'finalizado' && texto.toUpperCase() === 'SI')\n}];"
+        "respondWith": "text",
+        "responseBody": "OK",
+        "options": { "responseCode": 200 }
       },
-      "id": "logica",
-      "name": "Lógica de conversación",
-      "type": "n8n-nodes-base.function",
-      "typeVersion": 1,
-      "position": [850, 300]
+      "id": "node-002",
+      "name": "✅ Responder OK",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [440, 240]
     },
     {
       "parameters": {
-        "sql": "INSERT OR REPLACE INTO conversaciones (remitente, estado, datos, ultimo_mensaje, updated_at) VALUES ($remitente, $estado, $datos, $ultimo, CURRENT_TIMESTAMP);",
-        "queryParameters": {
-          "values": [
-            {
-              "parameter": "remitente",
-              "value": "={{ $json.remitente }}"
-            },
-            {
-              "parameter": "estado",
-              "value": "={{ $json.estado }}"
-            },
-            {
-              "parameter": "datos",
-              "value": "={{ $json.datosCliente }}"
-            },
-            {
-              "parameter": "ultimo",
-              "value": "={{ $json.respuesta }}"
-            }
-          ]
-        }
+        "jsCode": "const body = $input.first().json;\n\nconst event = body?.event;\nconst data = body?.data;\n\nif (event !== 'messages.upsert') {\n  return [{ json: { skip: true } }];\n}\n\nconst message = data?.messages?.[0] || data?.message;\nif (!message) {\n  return [{ json: { skip: true } }];\n}\n\nif (message?.key?.fromMe === true) {\n  return [{ json: { skip: true } }];\n}\n\nconst from = message?.key?.remoteJid?.replace('@s.whatsapp.net', '') || \n             data?.key?.remoteJid?.replace('@s.whatsapp.net', '');\n\nif (!from) {\n  return [{ json: { skip: true } }];\n}\n\nconst messageText = message?.message?.conversation || \n                    message?.message?.extendedTextMessage?.text ||\n                    data?.message?.conversation ||\n                    data?.message?.extendedTextMessage?.text ||\n                    '[Mensaje no compatible, por favor escribe en texto]';\n\nconst contactName = data?.pushName || message?.pushName || 'Cliente';\n\nreturn [{\n  json: {\n    skip: false,\n    from: from,\n    messageText: messageText,\n    contactName: contactName,\n    timestamp: Date.now()\n  }\n}];"
       },
-      "id": "actualizarConversacion",
-      "name": "Actualizar conversación",
-      "type": "n8n-nodes-base.executeQuery",
-      "typeVersion": 1,
-      "position": [1050, 250]
+      "id": "node-003",
+      "name": "🔍 Extraer Mensaje",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [440, 400]
     },
     {
       "parameters": {
         "conditions": {
-          "string": [
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
             {
-              "value1": "={{ $json.guardarCita }}",
-              "operation": "equals",
-              "value2": "true"
+              "id": "cond-skip",
+              "leftValue": "={{ $json.skip }}",
+              "rightValue": true,
+              "operator": { "type": "boolean", "operation": "equal" }
             }
-          ]
-        }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
       },
-      "id": "condGuardarCita",
-      "name": "¿Guardar cita?",
+      "id": "node-004",
+      "name": "¿Ignorar?",
       "type": "n8n-nodes-base.if",
-      "typeVersion": 1,
-      "position": [1050, 400]
+      "typeVersion": 2,
+      "position": [680, 400]
     },
     {
       "parameters": {
-        "sql": "INSERT INTO citas (remitente, servicio, fecha, hora) VALUES ($remitente, $servicio, $fecha, $hora);",
-        "queryParameters": {
-          "values": [
-            {
-              "parameter": "remitente",
-              "value": "={{ $json.remitente }}"
-            },
-            {
-              "parameter": "servicio",
-              "value": "={{ JSON.parse($json.datosCliente).servicio }}"
-            },
-            {
-              "parameter": "fecha",
-              "value": "={{ JSON.parse($json.datosCliente).fecha }}"
-            },
-            {
-              "parameter": "hora",
-              "value": "={{ JSON.parse($json.datosCliente).hora }}"
-            }
-          ]
-        }
+        "jsCode": "const messageData = $('🔍 Extraer Mensaje').first().json;\nconst telefono = messageData.from;\n\nconst workflowStaticData = $getWorkflowStaticData('global');\n\nif (!workflowStaticData.conversaciones) {\n  workflowStaticData.conversaciones = {};\n}\n\nconst ahora = Date.now();\nfor (const tel in workflowStaticData.conversaciones) {\n  if (ahora - workflowStaticData.conversaciones[tel].ultimaActividad > 7200000) {\n    delete workflowStaticData.conversaciones[tel];\n  }\n}\n\nif (!workflowStaticData.conversaciones[telefono]) {\n  workflowStaticData.conversaciones[telefono] = {\n    historial: [],\n    ultimaActividad: ahora\n  };\n}\n\nconst conv = workflowStaticData.conversaciones[telefono];\nconv.ultimaActividad = ahora;\n\nconv.historial.push({\n  role: 'user',\n  parts: [{ text: messageData.messageText }]\n});\n\nif (conv.historial.length > 20) {\n  conv.historial = conv.historial.slice(-20);\n}\n\nreturn [{\n  json: {\n    ...messageData,\n    historial: conv.historial\n  }\n}];"
       },
-      "id": "guardarCita",
-      "name": "Guardar cita en BD",
-      "type": "n8n-nodes-base.executeQuery",
-      "typeVersion": 1,
-      "position": [1250, 400]
+      "id": "node-005",
+      "name": "🧠 Memoria Conversación",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [920, 400]
     },
     {
       "parameters": {
-        "url": "https://graph.facebook.com/v17.0/1085311477990545/messages",
         "method": "POST",
-        "authentication": "genericCredentialType",
-        "genericAuthType": "httpHeaderAuth",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=AIzaSyByfJdqk3wEN83T9Ka6cmxo5Cv0g-8E0KU",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
-            {
-              "name": "Authorization",
-              "value": "Bearer EAAUHDYl9YMcBQ0z43hZC1KIHxAWHE5X4g0wIPjJOUI2JpdrK31Kb9L2TZArBE7OZCy9Ibnu3eheziZBIi3Xb7FoXNi1u2qX2ZBipSMSldqqAGQQZA8pFlZCzBdIYyvVZBp2cZBj9UZBBjxcLZCcb6cwZCAMcpv7ZCDTYQ7LZBNzQUlaBpdkkJjrAhwaZBLG2uMEieX5ExWnIAZDZD"
-            }
+            { "name": "Content-Type", "value": "application/json" }
           ]
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "{\n  \"messaging_product\": \"whatsapp\",\n  \"to\": \"{{$node['Extraer datos del mensaje'].json.remitente}}\",\n  \"type\": \"text\",\n  \"text\": {\n    \"body\": \"{{$node['Lógica de conversación'].json.respuesta}}\"\n  }\n}",
-        "options": {
-          "timeout": 20000
-        }
+        "jsonBody": "={\n  \"system_instruction\": {\n    \"parts\": [{\n      \"text\": \"Eres Sofia, la asistente virtual del Salón Citabella - Salón, Peluquería y Spa. Eres amable, profesional y hablas en español colombiano natural.\\n\\nSERVICIOS Y PRECIOS:\\n1. Corte de cabello - $15.000 - 30 min\\n2. Tinte / Coloración - $45.000 - 90 min\\n3. Manicure - $20.000 - 45 min\\n4. Pedicure - $25.000 - 50 min\\n5. Manicure + Pedicure - $40.000 - 80 min\\n6. Tratamiento capilar hidratación - $35.000 - 60 min\\n7. Tratamiento capilar keratina - $80.000 - 120 min\\n\\nHORARIOS:\\n- Lunes a Viernes: 8:00 AM - 7:00 PM\\n- Sábados: 8:00 AM - 5:00 PM\\n- Domingos: CERRADO\\n\\nPARA AGENDAR necesitas recopilar uno a uno: nombre completo, servicio deseado, fecha y hora.\\n\\nCUANDO TENGAS TODOS LOS DATOS coloca este bloque exacto al final de tu mensaje:\\n[CITA_DATOS]{\\\"nombre\\\": \\\"nombre\\\", \\\"servicio\\\": \\\"servicio\\\", \\\"fecha\\\": \\\"DD/MM/YYYY\\\", \\\"hora\\\": \\\"HH:MM\\\", \\\"precio\\\": \\\"precio\\\", \\\"duracion\\\": \\\"minutos\\\"}[/CITA_DATOS]\\n\\nREGLAS:\\n- Respuestas cortas máximo 3 oraciones\\n- Usa emojis con moderación 💅\\n- Verifica que la fecha no sea domingo\\n- Verifica que la hora esté dentro del horario\\n- Para cancelar: pide nombre y fecha\\n- Para ver citas: pide nombre\"\n    }]\n  },\n  \"contents\": ($json.historial && $json.historial.length > 0 ? $json.historial : [{ \"role\": \"user\", \"parts\": [{ \"text\": $json.messageText }] }]),\n  \"generationConfig\": {\n    \"temperature\": 0.7,\n    \"maxOutputTokens\": 500\n  }\n}",
+        "options": {}
       },
-      "id": "enviarWhatsApp",
-      "name": "Enviar a WhatsApp",
+      "id": "node-006",
+      "name": "🤖 Google Gemini",
       "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4,
-      "position": [1450, 300]
+      "typeVersion": 4.2,
+      "position": [1160, 400]
+    },
+    {
+      "parameters": {
+        "jsCode": "const geminiResponse = $input.first().json;\nconst messageData = $('🧠 Memoria Conversación').first().json;\n\nconst respuestaTexto = geminiResponse?.candidates?.[0]?.content?.parts?.[0]?.text || 'Lo siento, tuve un problema. Por favor intenta de nuevo.';\n\nlet citaDatos = null;\nconst citaMatch = respuestaTexto.match(/\\[CITA_DATOS\\](.*?)\\[\\/CITA_DATOS\\]/s);\nif (citaMatch) {\n  try {\n    citaDatos = JSON.parse(citaMatch[1]);\n    citaDatos.telefono = messageData.from;\n    citaDatos.fechaCreacion = new Date().toISOString();\n    citaDatos.id = 'CITA_' + Date.now();\n    citaDatos.estado = 'Confirmada';\n  } catch(e) {\n    citaDatos = null;\n  }\n}\n\nconst mensajeLimpio = respuestaTexto.replace(/\\[CITA_DATOS\\].*?\\[\\/CITA_DATOS\\]/s, '').trim();\n\nconst workflowStaticData = $getWorkflowStaticData('global');\nif (workflowStaticData.conversaciones?.[messageData.from]) {\n  workflowStaticData.conversaciones[messageData.from].historial.push({\n    role: 'model',\n    parts: [{ text: respuestaTexto }]\n  });\n  workflowStaticData.conversaciones[messageData.from].ultimaActividad = Date.now();\n}\n\nif (citaDatos) {\n  if (!workflowStaticData.citas) workflowStaticData.citas = [];\n  workflowStaticData.citas.push(citaDatos);\n}\n\nreturn [{\n  json: {\n    ...messageData,\n    respuestaTexto: mensajeLimpio,\n    citaDatos: citaDatos,\n    citaGuardada: citaDatos !== null\n  }\n}];"
+      },
+      "id": "node-007",
+      "name": "⚙️ Procesar Respuesta",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1400, 400]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://n8n.culturavpn.pro:7676/message/sendText/citabella",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "citabellaapi" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"number\": \"{{ $json.from }}\",\n  \"text\": \"{{ $json.respuestaTexto }}\"\n}",
+        "options": {}
+      },
+      "id": "node-008",
+      "name": "📤 Enviar WhatsApp",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1640, 400]
     }
   ],
   "connections": {
-    "Webhook WhatsApp": {
+    "📲 Webhook Evolution API": {
       "main": [
         [
-          {
-            "node": "Inicializar BD",
-            "type": "main",
-            "index": 0
-          }
+          { "node": "✅ Responder OK", "type": "main", "index": 0 },
+          { "node": "🔍 Extraer Mensaje", "type": "main", "index": 0 }
         ]
       ]
     },
-    "Inicializar BD": {
+    "🔍 Extraer Mensaje": {
       "main": [
-        [
-          {
-            "node": "Extraer datos del mensaje",
-            "type": "main",
-            "index": 0
-          }
-        ]
+        [{ "node": "¿Ignorar?", "type": "main", "index": 0 }]
       ]
     },
-    "Extraer datos del mensaje": {
+    "¿Ignorar?": {
       "main": [
-        [
-          {
-            "node": "Consultar conversación",
-            "type": "main",
-            "index": 0
-          }
-        ]
+        [],
+        [{ "node": "🧠 Memoria Conversación", "type": "main", "index": 0 }]
       ]
     },
-    "Consultar conversación": {
+    "🧠 Memoria Conversación": {
       "main": [
-        [
-          {
-            "node": "Lógica de conversación",
-            "type": "main",
-            "index": 0
-          }
-        ]
+        [{ "node": "🤖 Google Gemini", "type": "main", "index": 0 }]
       ]
     },
-    "Lógica de conversación": {
+    "🤖 Google Gemini": {
       "main": [
-        [
-          {
-            "node": "Actualizar conversación",
-            "type": "main",
-            "index": 0
-          }
-        ]
+        [{ "node": "⚙️ Procesar Respuesta", "type": "main", "index": 0 }]
       ]
     },
-    "Actualizar conversación": {
+    "⚙️ Procesar Respuesta": {
       "main": [
-        [
-          {
-            "node": "¿Guardar cita?",
-            "type": "main",
-            "index": 0
-          },
-          {
-            "node": "Enviar a WhatsApp",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "¿Guardar cita?": {
-      "main": [
-        [
-          {
-            "node": "Guardar cita en BD",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Guardar cita en BD": {
-      "main": [
-        []
-      ]
-    },
-    "Enviar a WhatsApp": {
-      "main": [
-        []
+        [{ "node": "📤 Enviar WhatsApp", "type": "main", "index": 0 }]
       ]
     }
   },
   "settings": {
-    "executionOrder": "v1"
+    "executionOrder": "v1",
+    "saveManualExecutions": true
   },
-  "staticData": null,
-  "pinData": {},
-  "versionId": "1.0.1",
-  "triggerCount": 1
+  "pinData": {}
 }
